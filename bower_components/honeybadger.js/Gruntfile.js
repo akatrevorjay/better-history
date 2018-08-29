@@ -1,4 +1,10 @@
 module.exports = function(grunt) {
+
+  // NOTE: If certain OS/browser platforms start failing when grunt-sauselabs
+  //       sends jobs to Sauce Labs, check that they still support the
+  //       OS/browser platforms listed here.
+  //       https://saucelabs.com/platforms
+  //       https://wiki.saucelabs.com/display/DOCS/Platform+Configurator#/
   var browsers = [{
     browserName: 'firefox',
     platform: 'Windows 10'
@@ -9,21 +15,21 @@ module.exports = function(grunt) {
     browserName: 'googlechrome',
     platform: 'linux'
   }, {
-    browserName: 'internet explorer',
-    platform: 'WIN8',
-    version: '10'
+    browserName: 'MicrosoftEdge',
+    platform: 'Windows 10',
+    version: '14.14393'
   }, {
     browserName: 'internet explorer',
-    platform: 'XP',
-    version: '8'
+    platform: 'Windows 8.1',
+    version: '11.0'
   }, {
     browserName: 'internet explorer',
-    platform: 'XP',
-    version: '7'
+    platform: 'Windows 8',
+    version: '10.0'
   }, {
     browserName: 'internet explorer',
-    platform: 'XP',
-    version: '6'
+    platform: 'Windows 7',
+    version: '8.0'
   }];
 
   grunt.initConfig({
@@ -46,9 +52,7 @@ module.exports = function(grunt) {
       all: {
         options: {
           urls: ['http://127.0.0.1:9999/spec/runner.html'],
-          tunnelTimeout: 5,
           build: process.env.TRAVIS_JOB_ID,
-          concurrency: 3,
           browsers: browsers,
           testname: 'honeybadger.js specs',
           tags: ['master']

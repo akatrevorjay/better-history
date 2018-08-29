@@ -1,6 +1,6 @@
 {
   "name": "mustache",
-  "version": "2.2.1",
+  "version": "2.3.2",
   "description": "Logic-less {{mustache}} templates with JavaScript",
   "author": "mustache.js Authors <http://github.com/janl/mustache.js>",
   "homepage": "https://github.com/janl/mustache.js",
@@ -41,15 +41,23 @@
   },
   "devDependencies": {
     "chai": "^3.4.0",
-    "eslint": "^1.7.3",
-    "mocha": "^2.1.0",
-    "zuul": "^3.7.0"
+    "eslint": "^2.5.1",
+    "jshint": "^2.9.5",
+    "mocha": "^3.0.2",
+    "uglify-js": "^3.4.6",
+    "zuul": "^3.11.0",
+    "zuul-ngrok": "nolanlawson/zuul-ngrok#patch-1"
   },
   "spm": {
     "main": "mustache.js",
     "ignore": [
       "test",
       "wrappers"
+    ]
+  },
+  "greenkeeper": {
+    "ignore": [
+      "eslint"
     ]
   },
   "license": "MIT"

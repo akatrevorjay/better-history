@@ -1,53 +1,41 @@
 (function() {
-  if(BH.config.env === 'prod') {
-    window.errorTracker = new BH.Lib.ErrorTracker(Honeybadger);
+var load = function() {
+  Historian.setWorkerPath('bower_components/chrome-historian/src/workers/');
+
+  if (chrome && chrome.i18n && chrome.i18n.getUILanguage) {
+    BH.lang = chrome.i18n.getUILanguage();
   }
 
-  window.analyticsTracker = new BH.Lib.AnalyticsTracker();
-
-  var load = function() {
-    Historian.setWorkerPath('bower_components/chrome-historian/src/workers/');
-
-    if(chrome && chrome.i18n && chrome.i18n.getUILanguage) {
-      BH.lang = chrome.i18n.getUILanguage();
+  Settings = Backbone.Model.extend({
+    defaults : {
+      searchBySelection : true,
+      searchByDomain : true,
+      use24HourClock : false
     }
+  });
 
-    analyticsTracker.historyOpen();
+  var settings = new Settings();
+  new ChromeSync().get('settings',
+                       function(props) { settings.set(props.settings); });
 
-    Settings = Backbone.Model.extend({
-      defaults: {
-        searchBySelection: true,
-        searchByDomain: true,
-        use24HourClock: false
-      }
-    });
+  window.router = new BH.Router({
+    settings : settings,
+  });
 
-    var settings = new Settings();
-    new ChromeSync().get('settings', function(props) {
-      settings.set(props.settings);
-    });
+  Backbone.history.start();
 
-    window.router = new BH.Router({
-      settings: settings,
-      tracker: analyticsTracker
-    });
+  // BH.Modals.MailingListModal.prompt(function() {
+  //   new BH.Modals.MailingListModal().open();
+  // });
+};
 
-    Backbone.history.start();
-
-    // BH.Modals.MailingListModal.prompt(function() {
-    //   new BH.Modals.MailingListModal().open();
-    //   analyticsTracker.mailingListPrompt();
-    // });
-  };
-
-  if(BH.config.env === 'prod') {
-    try {
-      load();
-    }
-    catch(e) {
-      errorTracker.report(e);
-    }
-  } else {
+if (BH.config.env === 'prod') {
+  try {
     load();
+  } catch (e) {
+    console.log.error(e);
   }
+} else {
+  load();
+}
 })();

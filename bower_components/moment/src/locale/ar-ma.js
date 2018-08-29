@@ -1,5 +1,5 @@
 //! moment.js locale configuration
-//! locale : Moroccan Arabic (ar-ma)
+//! locale : Arabic (Morocco) [ar-ma]
 //! author : ElFadili Yassine : https://github.com/ElFadiliY
 //! author : Abdel Said : https://github.com/abdelsaid
 
@@ -32,6 +32,7 @@ export default moment.defineLocale('ar-ma', {
         future : 'في %s',
         past : 'منذ %s',
         s : 'ثوان',
+        ss : '%d ثانية',
         m : 'دقيقة',
         mm : '%d دقائق',
         h : 'ساعة',

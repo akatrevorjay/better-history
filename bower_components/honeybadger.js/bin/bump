@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'json'
+
+PACKAGE_FILE      = 'package.json'
+BOWER_FILE        = 'bower.json'
+CHANGELOG_FILE    = 'CHANGELOG.md'
+CHANGELOG_HEADING = '## [Unreleased]'
+
+def next_version(version, offset = 1)
+  offset = -1 * offset
+  segments = Gem::Version.new(version).segments.dup
+  segments.pop while segments.any? { |s| String === s }
+  segments[offset] = segments[offset].succ
+  segments.join('.')
+end
+
+package_json = JSON.load(File.read(PACKAGE_FILE))
+
+old_version = package_json['version']
+new_version = next_version(old_version)
+
+# Update the package file.
+package_json['version'] = new_version
+File.write(PACKAGE_FILE, JSON.pretty_generate(package_json))
+
+# Update the bower file.
+bower_json = JSON.load(File.read(BOWER_FILE))
+bower_json['version'] = new_version
+File.write(BOWER_FILE, JSON.pretty_generate(bower_json))
+
+# Update the changelog.
+contents = File.read(CHANGELOG_FILE)
+unless contents =~ Regexp.new(Regexp.escape("## [#{new_version}]"))
+  File.write(CHANGELOG_FILE, contents.gsub(CHANGELOG_HEADING, "#{CHANGELOG_HEADING}\n\n## [#{new_version}] - #{Time.now.strftime("%Y-%m-%d")}"))
+end
+
+# Update honeybadger.js and finish.
+system(<<-BASH)
+  sed -i 's/#{old_version}/#{new_version}/g' honeybadger.js
+  git add -p
+BASH

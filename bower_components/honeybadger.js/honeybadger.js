@@ -1,11 +1,13 @@
 /*
-  honeybadger.js v0.4.2
+  honeybadger.js v0.5.5
   A JavaScript Notifier for Honeybadger
   https://github.com/honeybadger-io/honeybadger-js
   https://www.honeybadger.io/
   MIT license
 */
+
 (function (root, builder) {
+  'use strict';
   // Read default configuration from script tag if available.
   var scriptConfig = {};
   (function() {
@@ -14,7 +16,7 @@
     if (!tag) { return; }
     var attrs = tag.attributes;
     var value;
-    for (i = 0, len = attrs.length; i < len; i++) {
+    for (var i = 0, len = attrs.length; i < len; i++) {
       if (/data-(\w+)$/.test(attrs[i].nodeName)) {
         value = attrs[i].nodeValue;
         if (value === 'false') { value = false; }
@@ -38,7 +40,7 @@
     // AMD. Register as an anonymous module.
     define([], factory);
   } else if (typeof module === 'object' && module.exports) {
-    // Browserfy. Does not work with strict CommonJS, but
+    // Browserify. Does not work with strict CommonJS, but
     // only CommonJS-like environments that support module.exports,
     // like Browserfy/Node.
     module.exports = factory();
@@ -46,8 +48,8 @@
     // Browser globals (root is window).
     root.Honeybadger = factory();
   }
-}(this, function () {
-  var VERSION = '0.4.2',
+}(typeof self !== 'undefined' ? self : this, function () {
+  var VERSION = '0.5.5',
       NOTIFIER = {
         name: 'honeybadger.js',
         url: 'https://github.com/honeybadger-io/honeybadger-js',
@@ -66,8 +68,8 @@
   // Utilities.
   function merge(obj1, obj2) {
     var obj3 = {};
-    for (k in obj1) { obj3[k] = obj1[k]; }
-    for (k in obj2) { obj3[k] = obj2[k]; }
+    for (var k in obj1) { obj3[k] = obj1[k]; }
+    for (var k in obj2) { obj3[k] = obj2[k]; }
     return obj3;
   }
 
@@ -79,6 +81,16 @@
     return true;
   }
 
+  function isIgnored(err, patterns) {
+    var msg = err.message;
+
+    for (var p in patterns) {
+      if (msg.match(patterns[p])) { return true; }
+    }
+
+    return false;
+  }
+
   function cgiData() {
     var data = {};
     data['HTTP_USER_AGENT'] = navigator.userAgent;
@@ -86,6 +98,19 @@
       data['HTTP_REFERER'] = document.referrer;
     }
     return data;
+  }
+
+  function encodeCookie(object) {
+    if (typeof object !== 'object') {
+      return undefined;
+    }
+
+    var cookies = [];
+    for (var k in object) {
+      cookies.push(k + '=' + object[k]);
+    }
+
+    return cookies.join(';');
   }
 
   function stackTrace(err) {
@@ -145,23 +170,31 @@
     var queue = [];
     var self = {
       context: {},
-      beforeNotifyHandlers: []
+      beforeNotifyHandlers: [],
+      errorsSent: 0
     }
-    if (opts instanceof Object) {
-      for (k in opts) { self[k] = opts[k]; }
+    if (typeof opts === 'object') {
+      for (var k in opts) { self[k] = opts[k]; }
     }
 
-    function log(msg){
-      if (config('debug') && this.console) {
-        console.log( msg );
+    function log() {
+      var console = window.console;
+      if (console) {
+        var args = Array.prototype.slice.call(arguments);
+        args.unshift('[Honeybadger]');
+        console.log.apply(console, args);
+      }
+    }
+
+    function debug() {
+      if (config('debug')) {
+        return log.apply(this, arguments);
       }
     }
 
     function config(key, fallback) {
-      var value;
-      if (self[key] !== undefined) {
-        value = self[key];
-      }
+      var value = self[key];
+      if (value === undefined) { value = self[key.toLowerCase()] }
       if (value === 'false') { value = false; }
       if (value !== undefined) { return value; }
       return fallback;
@@ -169,6 +202,16 @@
 
     function baseURL() {
       return 'http' + ((config('ssl', true) && 's') || '') + '://' + config('host', 'api.honeybadger.io');
+    }
+
+    function canSerialize(obj) {
+      // Functions are TMI and Symbols can't convert to strings.
+      if (/function|symbol/.test(typeof(obj))) { return false; }
+
+      // No prototype, likely created with `Object.create(null)`.
+      if (typeof obj === 'object' && typeof obj.hasOwnProperty === 'undefined') { return false; }
+
+      return true;
     }
 
     function serialize(obj, prefix, depth) {
@@ -180,8 +223,8 @@
       }
       for (k in obj) {
         v = obj[k];
-        if (v instanceof Function) { v = '[FUNC]' }
         if (obj.hasOwnProperty(k) && (k != null) && (v != null)) {
+          if (!canSerialize(v)) { v = Object.prototype.toString.call(v); }
           pk = (prefix ? prefix + '[' + k + ']' : k);
           ret.push(typeof v === 'object' ? serialize(v, pk, depth+1) : encodeURIComponent(pk) + '=' + encodeURIComponent(v));
         }
@@ -190,32 +233,37 @@
     }
 
     function request(url) {
+      if (config('disabled', false)) { return false; }
+      if (exceedsMaxErrors()) { return false; }
+
       // Use XHR when available.
       try {
         // Inspired by https://gist.github.com/Xeoncross/7663273
-        x = new(this.XMLHttpRequest || ActiveXObject)('MSXML2.XMLHTTP.3.0');
-        x.open('GET', url, true);
+        var x = new(window.XMLHttpRequest || ActiveXObject)('MSXML2.XMLHTTP.3.0');
+        x.open('GET', url, config('async', true));
         x.send();
+        incrementErrorsCount();
         return;
       } catch(e) {
         log('Error encountered during XHR request (will retry): ' + e);
       }
 
       // Fall back to Image transport.
-      img = new Image();
+      var img = new Image();
       img.src = url;
     }
 
     function send(payload) {
       currentErr = currentPayload = null;
 
-      if (!config('api_key')) {
+      var apiKey = config('apiKey', config('api_key'));
+      if (!apiKey) {
         log('Unable to send error report: no API key has been configured.');
         return false;
       }
 
-      url = baseURL() + '/v1/notices/js.gif?' + serialize({notice: payload}) +
-        '&api_key=' + config('api_key') + '&t=' + new Date().getTime();
+      var url = baseURL() + '/v1/notices/js.gif?' + serialize({'notice': payload}) +
+        '&api_key=' + apiKey + '&t=' + new Date().getTime();
 
       request(url);
 
@@ -223,12 +271,16 @@
     }
 
     function notify(err, generated) {
-      if (config('disabled', false)) { return false; }
-      if (!(err instanceof Object)) { return false; }
+      if (!err) { err = {}; }
 
-      if (err instanceof Error) {
+      if (Object.prototype.toString.call(err) === '[object Error]') {
         var e = err;
-        err = {name: e.name, message: e.message, stack: stackTrace(e)};
+        err = merge(err, {name: e.name, message: e.message, stack: stackTrace(e)})
+      }
+
+      if (!(typeof err === 'object')) {
+        var m = String(err);
+        err = {message: m};
       }
 
       if (currentErrIs(err)) {
@@ -256,29 +308,38 @@
         err = merge(err, generated);
       }
 
-      if (checkHandlers(self.beforeNotifyHandlers, err)) {
-        return false;
+      if (isIgnored(err, config('ignorePatterns'))) { return false; }
+
+      if (checkHandlers(self.beforeNotifyHandlers, err)) { return false; }
+
+      var data = cgiData();
+      if (typeof err.cookies === 'string') {
+        data['HTTP_COOKIE'] = err.cookies;
+      } else if (typeof err.cookies === 'object') {
+        data['HTTP_COOKIE'] = encodeCookie(err.cookies);
       }
 
       var payload = {
-        notifier: NOTIFIER,
-        error: {
+        'notifier': NOTIFIER,
+        'error': {
           'class': err.name || 'Error',
-          message: err.message,
-          backtrace: err.stack,
-          generator: err.generator,
-          fingerprint: err.fingerprint
+          'message': err.message,
+          'backtrace': err.stack,
+          'generator': err.generator,
+          'fingerprint': err.fingerprint
         },
-        request: {
-          url: err.url || document.URL,
-          component: err.component || config('component'),
-          action: err.action || config('action'),
-          context: merge(self.context, err.context),
-          cgi_data: cgiData()
+        'request': {
+          'url': err.url || document.URL,
+          'component': err.component || config('component'),
+          'action': err.action || config('action'),
+          'context': merge(self.context, err.context),
+          'cgi_data': data,
+          'params': err.params
         },
-        server: {
-          project_root: err.project_root || config('project_root', window.location.protocol + '//' + window.location.host),
-          environment_name: err.environment || config('environment')
+        'server': {
+          'project_root': err.projectRoot || err.project_root || config('projectRoot', config('project_root', window.location.protocol + '//' + window.location.host)),
+          'environment_name': err.environment || config('environment'),
+          'revision': err.revision || config('revision')
         }
       };
 
@@ -286,18 +347,23 @@
       currentErr = err;
 
       if (loaded) {
-        log('Defering notice.', err, payload);
+        debug('Deferring notice.', err, payload);
         window.setTimeout(function(){
           if (currentErrIs(err)) {
             send(payload);
           }
         });
       } else {
-        log('Queuing notice.', err, payload);
+        debug('Queuing notice.', err, payload);
         queue.push(payload);
       }
 
       return err;
+    }
+
+    function objectIsExtensible(obj) {
+      if (typeof Object.isExtensible !== 'function') { return true; }
+      return Object.isExtensible(obj);
     }
 
     var preferCatch = true;
@@ -316,9 +382,8 @@
     // removeEventListener.
     function wrap(fn, force) {
       try {
-        if (typeof fn !== 'function') {
-          return fn;
-        }
+        if (typeof fn !== 'function') { return fn; }
+        if (!objectIsExtensible(fn))  { return fn; }
         if (!fn.___hb) {
           fn.___hb = function() {
             var onerror = config('onerror', true);
@@ -336,6 +401,7 @@
             }
           };
         }
+        fn.___hb.___hb = fn.___hb;
         return fn.___hb;
       } catch(_e) {
         return fn;
@@ -346,17 +412,17 @@
     self.notify = function(err, name, extra) {
       if (!err) { err = {}; }
 
-      if (err instanceof Error) {
+      if (Object.prototype.toString.call(err) === '[object Error]') {
         var e = err;
-        err = {name: e.name, message: e.message, stack: stackTrace(e)};
+        err = merge(err, {name: e.name, message: e.message, stack: stackTrace(e)})
       }
 
-      if (!(err instanceof Object)) {
+      if (!(typeof err === 'object')) {
         var m = String(err);
         err = {message: m};
       }
 
-      if (name && !(name instanceof Object)) {
+      if (name && !(typeof name === 'object')) {
         var n = String(name);
         name = {name: n};
       }
@@ -364,7 +430,7 @@
       if (name) {
         err = merge(err, name);
       }
-      if (extra instanceof Object) {
+      if (typeof extra === 'object') {
         err = merge(err, extra);
       }
 
@@ -376,14 +442,14 @@
     };
 
     self.setContext = function(context) {
-      if (context instanceof Object) {
+      if (typeof context === 'object') {
         self.context = merge(self.context, context);
       }
       return self;
     };
 
     self.resetContext = function(context) {
-      if (context instanceof Object) {
+      if (typeof context === 'object') {
         self.context = merge({}, context);
       } else {
         self.context = {};
@@ -392,7 +458,7 @@
     };
 
     self.configure = function(opts) {
-      for (k in opts) {
+      for (var k in opts) {
         self[k] = opts[k];
       }
       return self;
@@ -407,12 +473,17 @@
     self.reset = function() {
       self.context = {};
       self.beforeNotifyHandlers = [];
-      for (k in self) {
+      for (var k in self) {
         if (indexOf.call(defaultProps, k) == -1) {
           self[k] = undefined;
         }
       }
+      self.resetMaxErrors();
       return self;
+    };
+
+    self.resetMaxErrors = function() {
+      return (self.errorsSent=0);
     };
 
     self.getVersion = function() {
@@ -431,7 +502,7 @@
     var instrumentTimer = function(original) {
       // See https://developer.mozilla.org/en-US/docs/Web/API/WindowTimers/setTimeout
       return function(func, delay) {
-        if (func instanceof Function) {
+        if (typeof func === 'function') {
           var args = Array.prototype.slice.call(arguments, 2);
           func = wrap(func);
           return original(function() {
@@ -448,7 +519,7 @@
     // Event targets borrowed from bugsnag-js:
     // See https://github.com/bugsnag/bugsnag-js/blob/d55af916a4d3c7757f979d887f9533fe1a04cc93/src/bugsnag.js#L542
     'EventTarget Window Node ApplicationCache AudioTrackList ChannelMergerNode CryptoOperation EventSource FileReader HTMLUnknownElement IDBDatabase IDBRequest IDBTransaction KeyOperation MediaController MessagePort ModalWindow Notification SVGElementInstance Screen TextTrack TextTrackCue TextTrackList WebSocket WebSocketWorker Worker XMLHttpRequest XMLHttpRequestEventTarget XMLHttpRequestUpload'.replace(/\w+/g, function (prop) {
-      prototype = window[prop] && window[prop].prototype;
+      var prototype = window[prop] && window[prop].prototype;
       if (prototype && prototype.hasOwnProperty && prototype.hasOwnProperty('addEventListener')) {
         instrument(prototype, 'addEventListener', function(original) {
           // See https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
@@ -475,20 +546,29 @@
 
     instrument(window, 'onerror', function(original) {
       function onerror(msg, url, line, col, err) {
+        debug('window.onerror callback invoked.', arguments);
+
+        // Skip if the error is already being sent.
         if (currentErr) { return; }
+
         if (!config('onerror', true)) { return; }
+
         if (line === 0 && /Script error\.?/.test(msg)) {
           // See https://developer.mozilla.org/en/docs/Web/API/GlobalEventHandlers/onerror#Notes
-          log('Ignoring cross-domain script error. Use CORS to enable tracking of these types of errors.');
+          log('Ignoring cross-domain script error. Use CORS to enable tracking of these types of errors.', arguments);
           return;
         }
-        log('Error caught by window.onerror');
-        if (err) {
-          notify(err);
-          return;
-        }
+
         // simulate v8 stack
-        stack = [msg, '\n    at ? (', url || 'unknown', ':', line || 0, ':', col || 0, ')'].join('');
+        var stack = [msg, '\n    at ? (', url || 'unknown', ':', line || 0, ':', col || 0, ')'].join('');
+
+        if (err) {
+          var generated = { stack: stackTrace(err) };
+          if (!generated.stack) { generated = {stack: stack}; }
+          notify(err, generated);
+          return;
+        }
+
         notify({
           name: 'window.onerror',
           message: msg,
@@ -498,35 +578,45 @@
       // See https://developer.mozilla.org/en-US/docs/Web/API/GlobalEventHandlers/onerror
       return function(msg, url, line, col, err) {
         onerror(msg, url, line, col, err);
-        if (original instanceof Function) {
+        if (typeof original === 'function') {
           return original.apply(this, arguments);
         }
         return false;
       };
     });
 
+    function incrementErrorsCount() {
+      return self.errorsSent++;
+    }
+
+    function exceedsMaxErrors() {
+      var maxErrors = config('maxErrors');
+      return maxErrors && self.errorsSent >= maxErrors;
+    }
+
     // End of instrumentation.
     installed = true;
 
     // Save original state for reset()
-    for (k in self) {
+    for (var k in self) {
       defaultProps.push(k);
     }
 
     // Initialization.
-    log('Initializing honeybadger.js ' + VERSION);
+    debug('Initializing honeybadger.js ' + VERSION);
 
     // See https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState
     // https://www.w3.org/TR/html5/dom.html#dom-document-readystate
     // The 'loaded' state is for older versions of Safari.
     if (/complete|interactive|loaded/.test(document.readyState)) {
       loaded = true;
-      log('honeybadger.js ' + VERSION + ' ready');
+      debug('honeybadger.js ' + VERSION + ' ready');
     } else {
-      log('Installing ready handler');
+      debug('Installing ready handler');
       var domReady = function() {
         loaded = true;
-        log('honeybadger.js ' + VERSION + ' ready');
+        debug('honeybadger.js ' + VERSION + ' ready');
+        var notice;
         while (notice = queue.pop()) {
           send(notice);
         }

@@ -1,6 +1,6 @@
 {
   "name": "honeybadger",
-  "version": "0.4.2",
+  "version": "0.5.5",
   "homepage": "https://github.com/honeybadger-io/honeybadger-js",
   "authors": [
     "Joshua Wood <josh@honeybadger.io>"
@@ -23,11 +23,11 @@
     "test",
     "tests"
   ],
-  "_release": "0.4.2",
+  "_release": "0.5.5",
   "_resolution": {
     "type": "version",
-    "tag": "v0.4.2",
-    "commit": "5afba80861450fc27dedb08d8c36c83953f683e3"
+    "tag": "v0.5.5",
+    "commit": "5daf556f4c8be605ebcc9c7d277070fc67f85924"
   },
   "_source": "https://github.com/honeybadger-io/honeybadger-js.git",
   "_target": ">=0.1.2",
