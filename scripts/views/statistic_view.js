@@ -270,13 +270,14 @@ var bg = chrome.extension.getBackgroundPage();
 	  // Set chart options
 	  var options = {
 	    tooltip: {
-	      text: 'percentage'
+				text: 'both',
+				isHtml: true,
 	    },
 	    chartArea: {
 	      width: 400,
-	      height: 180
+	      height: 180,
 	    },
-	    is3D: true
+	    is3D: true,
 	  };
 
 	  // Instantiate and draw our chart, passing in some options.
@@ -285,10 +286,7 @@ var bg = chrome.extension.getBackgroundPage();
 	}
 
 	function drawTable(table_data, type) {
-          var bg = chrome.extension.getbgPage();
-          if (!google || !google.visualization)
-            return;
-
+		var bg = chrome.extension.getBackgroundPage();
 	  var data = new google.visualization.DataTable();
 	  data.addColumn('string', 'Domain');
 	  var timeDesc;
