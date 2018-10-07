@@ -286,7 +286,9 @@ var bg = chrome.extension.getBackgroundPage();
 	}
 
 	function drawTable(table_data, type) {
-		var bg = chrome.extension.getBackgroundPage();
+		var bg = chrome.extension.getbgPage();
+          if (!google || !google.visualization)
+            return;
 	  var data = new google.visualization.DataTable();
 	  data.addColumn('string', 'Domain');
 	  var timeDesc;
